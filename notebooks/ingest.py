@@ -29,4 +29,18 @@ spark.conf.set(f"fs.azure.account.oauth2.client.endpoint.{storage_account_name}.
 
 # COMMAND ----------
 
-dbutils.fs.ls(f"abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/")
+# View files
+dbutils.fs.ls(f"abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/raw/data")
+
+# COMMAND ----------
+
+# Read CSV file, persist as 
+df = spark.read.format("csv").option("header","true").load(f"abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/raw/data/NFL Play by Play 2009-2018 (v5).csv")
+display(df)
+
+# COMMAND ----------
+
+# Save DF as Delta Lake table
+database_name = "default"
+table_name = "raw_nfl_play_by_play_data"
+df.write.mode("overwrite").format("delta").saveAsTable(f"`{database_name}`.`{table_name}`")
