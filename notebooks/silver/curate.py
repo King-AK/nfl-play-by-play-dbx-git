@@ -55,8 +55,11 @@ target_columns = ['play_id',
  'yrdln',
  'ydstogo',
  'play_type',
+ 'yards_gained',
  'shotgun',
  'no_huddle',
+ 'qb_dropback',
+ 'qb_scramble',
  'pass_length',
  'pass_location',
  'air_yards',
@@ -122,7 +125,15 @@ target_columns = ['play_id',
  'total_home_raw_air_wpa',
  'total_away_raw_air_wpa',
  'total_home_raw_yac_wpa',
- 'total_away_raw_yac_wpa'
+ 'total_away_raw_yac_wpa',
+ 'tackled_for_loss',
+ 'interception',
+ 'fumble_forced',
+ 'qb_hit',
+ 'rush_attempt',
+ 'pass_attempt',
+ 'sack',
+ 'complete_pass'
 ]
 
 # COMMAND ----------
@@ -131,11 +142,47 @@ play_type_filter = ['pass', 'run', 'punt,' 'qb_kneel', 'qb_spike']
 
 # COMMAND ----------
 
+# Filter down for target columns, play type, and team
 silver_df = raw_df.select(*target_columns)\
                 .filter(raw_df.posteam == target_team)\
                 .filter(raw_df.play_type.isin(*play_type_filter))
 
 display(silver_df)
+
+# COMMAND ----------
+
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+
+# Augment the dataset with some statistical columns for moving averages
+
+# Consider start of play stats
+def augment_with_ma(df, col, window=5):
+    # Use of 5 as the MA range is arbitrary here
+    lower_bound = 0 - window
+    past_ma_window = (Window()
+                      .partitionBy(F.col("game_id"))
+                      .orderBy(F.col("play_id"))
+                      .rowsBetween(lower_bound, 0))
+    return df.withColumn(f"{col}_ma", F.avg(col).over(past_ma_window))
+
+for col in ["ydstogo", "no_huddle"]:
+    silver_df = augment_with_ma(silver_df, col)
+
+# Consider end of play stats with offset -1 so only past information included
+def augment_with_past_ma(df, col, window=5):
+    # Use of 5 as the MA range is arbitrary here
+    lower_bound = (-1) - window
+    past_ma_window = (Window()
+                      .partitionBy(F.col("game_id"))
+                      .orderBy(F.col("play_id"))
+                      .rowsBetween(lower_bound, -1))
+    return df.withColumn(f"{col}_ma", F.avg(col).over(past_ma_window))
+
+for col in ["yards_gained", "qb_dropback", "qb_scramble", "rush_attempt", "pass_attempt", "sack", "complete_pass"]:
+    silver_df = augment_with_past_ma(silver_df, col)
+
+display(silver_df.orderBy(["game_id", "play_id"]))
 
 # COMMAND ----------
 
@@ -147,4 +194,4 @@ spark.sql(f"""CREATE SCHEMA IF NOT EXISTS {database_name}
 # COMMAND ----------
 
 # Save DF as Delta Lake table
-silver_df.write.mode("overwrite").format("delta").saveAsTable(f"`{database_name}`.`{table_name}`")
+silver_df.write.mode("overwrite").format("delta").option("overwriteSchema", "true").saveAsTable(f"`{database_name}`.`{table_name}`")
