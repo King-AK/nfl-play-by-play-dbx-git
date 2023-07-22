@@ -23,8 +23,23 @@ nfl_agent.run("how many rows are there?")
 
 # COMMAND ----------
 
-# Let's see how well DaScie does on a simple request.
-# dascie.run("Analyze this data, tell me any interesting trends. Make some pretty plots.")
+# Get some information regarding play_type
+nfl_agent.run("Analyze this data, tell me any interesting trends regarding play_type.")
+
+# COMMAND ----------
+
+# Get some information regarding play_type
+nfl_agent.run("""
+              Create a new dataframe `df_tmp` which only has the following columns: ["half_seconds_remaining", "ydstogo", "play_type"].
+              Drop any nulls or NAs from `df_tmp`.
+              Convert the dataframe `df_tmp` to a pandas dataframe named `pandas_df`.
+              Generate a scatterplot using `pandas_df` with matplotlib. This scatterplot should use "half_seconds_remaining" column as the x-axis, use the "ydstogo" column as the y-axis, and be grouped by play_type
+              """
+              ) 
+
+# COMMAND ----------
+
+# Generate a scatterplot using `pandas_df` with matplotlib. The scatterplot should use half_seconds_remaining column as the x-axis, use the ydstogo column as the y-axis, and be grouped by play_type.")
 
 # COMMAND ----------
 
