@@ -9,6 +9,8 @@ dbutils.widgets.text("container_name", "")
 
 storage_account_name = dbutils.widgets.get("storage_account_name")
 container_name = dbutils.widgets.get("container_name")
+database_name = "bronze_db"
+table_name = "raw_nfl_play_by_play_data"
 
 # COMMAND ----------
 
@@ -36,13 +38,11 @@ display(df)
 # COMMAND ----------
 
 # Create external database in storage account
-spark.sql(f"""CREATE SCHEMA IF NOT EXISTS ingest_db
-             LOCATION 'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/ingest_db' 
+spark.sql(f"""CREATE SCHEMA IF NOT EXISTS {database_name}
+             LOCATION 'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/{database_name}' 
              """)
 
 # COMMAND ----------
 
 # Save DF as Delta Lake table
-database_name = "ingest_db"
-table_name = "raw_nfl_play_by_play_data"
 df.write.mode("overwrite").format("delta").saveAsTable(f"`{database_name}`.`{table_name}`")
