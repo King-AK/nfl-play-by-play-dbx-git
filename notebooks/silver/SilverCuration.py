@@ -1,37 +1,44 @@
 # Databricks notebook source
-"""
-This notebook curates the bronze dataset of NFL data into silver datasets
-"""
+# MAGIC %md
+# MAGIC # Silver Curation
+# MAGIC
+# MAGIC This notebook curates the bronze dataset of NFL data into silver datasets
+
+# COMMAND ----------
+
+# Widgets
 
 dbutils.widgets.text("target_team", "")
 dbutils.widgets.text("storage_account_name", "")
 dbutils.widgets.text("container_name", "")
-
+dbutils.widgets.text("catalog_name", "")
+dbutils.widgets.text("bronze_database_name", "")
+dbutils.widgets.text("silver_database_name", "")
 
 storage_account_name = dbutils.widgets.get("storage_account_name")
 container_name = dbutils.widgets.get("container_name")
 target_team = dbutils.widgets.get("target_team")
+catalog = dbutils.widgets.get("catalog_name")
+silver_database_name = dbutils.widgets.get("silver_database_name")
+bronze_database_name = dbutils.widgets.get("bronze_database_name")
 
-
-database_name = "silver_db"
-table_name = f"silver_play_info_{target_team}"
-bronze_database_name = "bronze_db"
-bronze_table_name = "raw_nfl_play_by_play_data"
-
-# COMMAND ----------
-
-# %sql
-# --  View Bronze Table
-# SELECT * FROM bronze_db.raw_nfl_play_by_play_data WHERE play_type IN ('pass', 'run', 'punt') AND posteam IN ('STL', 'NE', 'GB')
+silver_table_name = f"silver_play_info_{target_team}"
+bronze_table_name = "nfl_play_by_play_data"
 
 # COMMAND ----------
 
-# Get DF for raw data
-raw_df = spark.table("`bronze_db`.`raw_nfl_play_by_play_data`")
-# display(raw_df)
+# Get DF for bronze data
+bronze_full_table_name = f"`{catalog}`.`{bronze_database_name}`.`{bronze_table_name}`"
+bronze_df = spark.table(bronze_full_table_name)
+display(bronze_df)
 
 # COMMAND ----------
 
+# display(bronze_df.where("play_type IN ('pass', 'run', 'punt') AND posteam IN ('STL', 'NE', 'GB')"))
+
+# COMMAND ----------
+
+# Specify target columns
 from pyspark.sql.types import *
 target_columns = {
     'play_id': IntegerType(),
@@ -147,9 +154,9 @@ play_type_filter = ['pass', 'run', 'punt,' 'qb_kneel', 'qb_spike']
 # Filter down for target columns, play type, and team
 from pyspark.sql import functions as F
 select_expr = [F.col(c).cast(t) for c, t in target_columns.items()]
-silver_df = raw_df.select(*select_expr)\
-                .filter(raw_df.posteam == target_team)\
-                .filter(raw_df.play_type.isin(*play_type_filter))
+silver_df = bronze_df.select(*select_expr)\
+                .filter(bronze_df.posteam == target_team)\
+                .filter(bronze_df.play_type.isin(*play_type_filter))
 
 display(silver_df)
 
@@ -190,12 +197,6 @@ display(silver_df.orderBy(["game_id", "play_id"]))
 
 # COMMAND ----------
 
-# Create external database in storage account
-spark.sql(f"""CREATE SCHEMA IF NOT EXISTS {database_name}
-             LOCATION 'abfss://{container_name}@{storage_account_name}.dfs.core.windows.net/{database_name}' 
-             """)
-
-# COMMAND ----------
-
 # Save DF as Delta Lake table
-silver_df.write.mode("overwrite").format("delta").option("overwriteSchema", "true").saveAsTable(f"`{database_name}`.`{table_name}`")
+silver_full_table_name = f"`{catalog}`.`{silver_database_name}`.`{silver_table_name}`"
+silver_df.write.mode("overwrite").format("delta").option("overwriteSchema", "true").saveAsTable(silver_full_table_name)
