@@ -56,7 +56,7 @@ def augment_with_past_ma(df, col, window_size=5):
     # Use of 5 as the MA range is arbitrary here
     lower_bound = (-1) - window_size
     past_ma_window = (Window()
-                      .partitionBy(F.col("game_id", "posteam"))
+                      .partitionBy(F.col("game_id"), F.col("posteam"))
                       .orderBy(F.col("play_id"))
                       .rowsBetween(lower_bound, -1))
     return df.withColumn(f"{col}_{window_size}_play_ma", F.avg(col).over(past_ma_window))
