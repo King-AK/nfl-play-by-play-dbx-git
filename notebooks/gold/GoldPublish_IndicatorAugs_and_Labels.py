@@ -84,9 +84,119 @@ display(gold_df)
 
 # COMMAND ----------
 
-# Save DF as Delta Lake table
+partition_cols = ["posteam"]
+narrow_table_columns = [
+ 'home_team',
+ 'away_team',
+ 'posteam',
+ 'posteam_type',
+ 'defteam',
+ 'side_of_field',
+ 'yardline_100',
+ 'quarter_seconds_remaining',
+ 'half_seconds_remaining',
+ 'game_seconds_remaining',
+ 'game_half',
+ 'quarter_end',
+ 'drive',
+ 'qtr',
+ 'down',
+ 'goal_to_go',
+ 'time',
+ 'ydstogo',
+ 'play_type',
+ 'yards_gained',
+ 'shotgun',
+ 'no_huddle',
+ 'home_timeouts_remaining',
+ 'away_timeouts_remaining',
+ 'posteam_timeouts_remaining',
+ 'defteam_timeouts_remaining',
+ 'total_home_score',
+ 'total_away_score',
+ 'posteam_score',
+ 'defteam_score',
+ 'score_differential',
+#  'no_score_prob',
+#  'opp_fg_prob',
+#  'opp_safety_prob',
+#  'opp_td_prob',
+#  'fg_prob',
+#  'safety_prob',
+#  'td_prob',
+#  'extra_point_prob',
+#  'two_point_conversion_prob',
+#  'ep',
+#  'epa',
+#  'total_home_epa',
+#  'total_away_epa',
+#  'total_home_rush_epa',
+#  'total_away_rush_epa',
+#  'total_home_pass_epa',
+#  'total_away_pass_epa',
+#  'air_epa',
+#  'yac_epa',
+#  'comp_air_epa',
+#  'comp_yac_epa',
+#  'total_home_comp_air_epa',
+#  'total_away_comp_air_epa',
+#  'total_home_comp_yac_epa',
+#  'total_away_comp_yac_epa',
+#  'total_home_raw_air_epa',
+#  'total_away_raw_air_epa',
+#  'total_home_raw_yac_epa',
+#  'total_away_raw_yac_epa',
+#  'wp',
+#  'def_wp',
+#  'home_wp',
+#  'away_wp',
+#  'wpa',
+#  'home_wp_post',
+#  'away_wp_post',
+#  'total_home_rush_wpa',
+#  'total_away_rush_wpa',
+#  'total_home_pass_wpa',
+#  'total_away_pass_wpa',
+#  'air_wpa',
+#  'yac_wpa',
+#  'comp_air_wpa',
+#  'comp_yac_wpa',
+#  'total_home_comp_air_wpa',
+#  'total_away_comp_air_wpa',
+#  'total_home_comp_yac_wpa',
+#  'total_away_comp_yac_wpa',
+#  'total_home_raw_air_wpa',
+#  'total_away_raw_air_wpa',
+#  'total_home_raw_yac_wpa',
+#  'total_away_raw_yac_wpa',
+ 'yards_gained_10_play_ma',
+ 'qb_dropback_10_play_ma',
+ 'qb_scramble_10_play_ma',
+ 'rush_attempt_10_play_ma',
+ 'pass_attempt_10_play_ma',
+ 'sack_10_play_ma',
+ 'complete_pass_10_play_ma',
+#  'compund_playtype', # TODO reintroduce with additional window tracking compound play types as flag vals since theres no hash marker col
+ 'game_month']
+
+# COMMAND ----------
+
+# Save gold table as Delta Lake table
 partition_cols = ["posteam"]
 gold_full_table_name = f"`{catalog}`.`{gold_database_name}`.`{gold_table_name}`"
 gold_df.write.mode("overwrite").format("delta")\
     .partitionBy(*partition_cols)\
     .option("overwriteSchema", "true").saveAsTable(gold_full_table_name)
+
+# COMMAND ----------
+
+narrow_df = gold_df.select(*narrow_table_columns)
+display(narrow_df)
+
+# COMMAND ----------
+
+# Save narrow version of gold table for ml experimentation that omits columns that wont be used in prediction
+narrow_gold_full_table_name = f"`{catalog}`.`{gold_database_name}`.`narrow_{gold_table_name}`"
+narrow_df.write.mode("overwrite").format("delta")\
+    .partitionBy(*partition_cols)\
+    .option("overwriteSchema", "true").saveAsTable(narrow_gold_full_table_name)
