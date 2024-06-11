@@ -15,7 +15,6 @@ dbutils.widgets.text("silver_database_name", "")
 
 storage_account_name = dbutils.widgets.get("storage_account_name")
 container_name = dbutils.widgets.get("container_name")
-target_team = dbutils.widgets.get("target_team")
 catalog = dbutils.widgets.get("catalog_name")
 silver_database_name = dbutils.widgets.get("silver_database_name")
 bronze_database_name = dbutils.widgets.get("bronze_database_name")
