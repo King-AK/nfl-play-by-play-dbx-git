@@ -2,7 +2,7 @@
 # MAGIC %md
 # MAGIC # Silver Curation
 # MAGIC
-# MAGIC This notebook curates the bronze dataset of NFL data into silver datasets
+# MAGIC This notebook curates the bronze dataset of NFL data into the silver dataset
 
 # COMMAND ----------
 
@@ -20,7 +20,7 @@ catalog = dbutils.widgets.get("catalog_name")
 silver_database_name = dbutils.widgets.get("silver_database_name")
 bronze_database_name = dbutils.widgets.get("bronze_database_name")
 
-silver_table_name = f"silver_play_info_{target_team}"
+silver_table_name = "nfl_play_by_play_data"
 bronze_table_name = "nfl_play_by_play_data"
 
 # COMMAND ----------
