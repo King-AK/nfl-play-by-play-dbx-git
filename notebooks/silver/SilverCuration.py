@@ -2,13 +2,11 @@
 # MAGIC %md
 # MAGIC # Silver Curation
 # MAGIC
-# MAGIC This notebook curates the bronze dataset of NFL data into silver datasets
+# MAGIC This notebook curates the bronze dataset of NFL data into the silver dataset
 
 # COMMAND ----------
 
 # Widgets
-
-dbutils.widgets.text("target_team", "")
 dbutils.widgets.text("storage_account_name", "")
 dbutils.widgets.text("container_name", "")
 dbutils.widgets.text("catalog_name", "")
@@ -22,7 +20,7 @@ catalog = dbutils.widgets.get("catalog_name")
 silver_database_name = dbutils.widgets.get("silver_database_name")
 bronze_database_name = dbutils.widgets.get("bronze_database_name")
 
-silver_table_name = f"silver_play_info_{target_team}"
+silver_table_name = "nfl_play_by_play_data"
 bronze_table_name = "nfl_play_by_play_data"
 
 # COMMAND ----------
@@ -31,10 +29,6 @@ bronze_table_name = "nfl_play_by_play_data"
 bronze_full_table_name = f"`{catalog}`.`{bronze_database_name}`.`{bronze_table_name}`"
 bronze_df = spark.table(bronze_full_table_name)
 display(bronze_df)
-
-# COMMAND ----------
-
-# display(bronze_df.where("play_type IN ('pass', 'run', 'punt') AND posteam IN ('STL', 'NE', 'GB')"))
 
 # COMMAND ----------
 
@@ -83,15 +77,15 @@ target_columns = {
     'posteam_score': IntegerType(),
     'defteam_score': IntegerType(),
     'score_differential': IntegerType(),
-    # #  'no_score_prob',
-    # #  'opp_fg_prob',
-    # #  'opp_safety_prob',
-    # #  'opp_td_prob',
-    # #  'fg_prob',
-    # #  'safety_prob',
-    # #  'td_prob',
-    # #  'extra_point_prob',
-    # #  'two_point_conversion_prob',
+    'no_score_prob': DoubleType(),
+    'opp_fg_prob': DoubleType(),
+    'opp_safety_prob': DoubleType(),
+    'opp_td_prob': DoubleType(),
+    'fg_prob': DoubleType(),
+    'safety_prob': DoubleType(),
+    'td_prob': DoubleType(),
+    'extra_point_prob': DoubleType(),
+    'two_point_conversion_prob': DoubleType(),
     'ep': DoubleType(),
     'epa': DoubleType(),
     'total_home_epa': DoubleType(),
@@ -147,56 +141,20 @@ target_columns = {
 
 # COMMAND ----------
 
-play_type_filter = ['pass', 'run', 'punt,' 'qb_kneel', 'qb_spike']
-
-# COMMAND ----------
-
 # Filter down for target columns, play type, and team
 from pyspark.sql import functions as F
 select_expr = [F.col(c).cast(t) for c, t in target_columns.items()]
-silver_df = bronze_df.select(*select_expr)\
-                .filter(bronze_df.posteam == target_team)\
-                .filter(bronze_df.play_type.isin(*play_type_filter))
+silver_df = bronze_df.select(*select_expr)
 
 display(silver_df)
 
 # COMMAND ----------
 
-from pyspark.sql import functions as F
-from pyspark.sql.window import Window
-
-# Augment the dataset with some statistical columns for moving averages
-
-# Consider start of play stats
-def augment_with_ma(df, col, window=5):
-    # Use of 5 as the MA range is arbitrary here
-    lower_bound = 0 - window
-    past_ma_window = (Window()
-                      .partitionBy(F.col("game_id"))
-                      .orderBy(F.col("play_id"))
-                      .rowsBetween(lower_bound, 0))
-    return df.withColumn(f"{col}_ma", F.avg(col).over(past_ma_window))
-
-for col in ["ydstogo", "no_huddle"]:
-    silver_df = augment_with_ma(silver_df, col)
-
-# Consider end of play stats with offset -1 so only past information included
-def augment_with_past_ma(df, col, window=5):
-    # Use of 5 as the MA range is arbitrary here
-    lower_bound = (-1) - window
-    past_ma_window = (Window()
-                      .partitionBy(F.col("game_id"))
-                      .orderBy(F.col("play_id"))
-                      .rowsBetween(lower_bound, -1))
-    return df.withColumn(f"{col}_ma", F.avg(col).over(past_ma_window))
-
-for col in ["yards_gained", "qb_dropback", "qb_scramble", "rush_attempt", "pass_attempt", "sack", "complete_pass"]:
-    silver_df = augment_with_past_ma(silver_df, col)
-
-display(silver_df.orderBy(["game_id", "play_id"]))
-
-# COMMAND ----------
-
-# Save DF as Delta Lake table
+# # Save DF as Delta Lake table
+partitionCols = ["posteam"]
 silver_full_table_name = f"`{catalog}`.`{silver_database_name}`.`{silver_table_name}`"
-silver_df.write.mode("overwrite").format("delta").option("overwriteSchema", "true").saveAsTable(silver_full_table_name)
+silver_df.write.mode("overwrite")\
+    .format("delta")\
+    .option("overwriteSchema", "true")\
+    .partitionBy(*partitionCols)\
+    .saveAsTable(silver_full_table_name)
