@@ -143,8 +143,39 @@ display(pass_defense_ma_df.filter(pass_defense_ma_df.defteam=="CAR"))
 
 # COMMAND ----------
 
+# Join run and pass defense to back to the in_game table and front fill defensive stats
+gold_df = gold_in_game_df.join(run_defense_ma_df, 
+                               on=["play_id", "game_date", "defteam"], 
+                               how="left")\
+                        .join(pass_defense_ma_df,
+                                on=["play_id", "game_date", "defteam"],
+                                how="left")
+
+for c in [f"run_yards_given_{defense_window_size}_play_ma",
+          f"defense_tfl_{defense_window_size}_play_ma",
+          f"pass_yards_given_{defense_window_size}_play_ma",
+          f"defense_sack_{defense_window_size}_play_ma",
+          f"defense_qb_hit_{defense_window_size}_play_ma",
+          f"defense_interception_{defense_window_size}_play_ma",
+          f"pass_given_up_{defense_window_size}_play_ma"]:
+    gold_df = gold_df.transform(front_fill, col=c, partition_cols=["defteam"], 
+                                 order_cols=["game_date", "play_id"])
+
+display(gold_df.orderBy("game_date", "play_id"))
+
+
+# COMMAND ----------
+
+# Save gold table as Delta Lake table
 partition_cols = ["posteam"]
-narrow_table_columns = [
+gold_full_table_name = f"`{catalog}`.`{gold_database_name}`.`{gold_table_name}`"
+gold_df.write.mode("overwrite").format("delta")\
+    .partitionBy(*partition_cols)\
+    .option("overwriteSchema", "true").saveAsTable(gold_full_table_name)
+
+# COMMAND ----------
+
+narrow_df_columns = [
  'home_team',
  'away_team',
  'posteam',
@@ -227,51 +258,25 @@ narrow_table_columns = [
 #  'total_away_raw_air_wpa',
 #  'total_home_raw_yac_wpa',
 #  'total_away_raw_yac_wpa',
- 'yards_gained_10_play_ma',
- 'qb_dropback_10_play_ma',
- 'qb_scramble_10_play_ma',
- 'rush_attempt_10_play_ma',
- 'pass_attempt_10_play_ma',
- 'sack_10_play_ma',
- 'complete_pass_10_play_ma',
+f"yards_gained_{in_game_window_size}_play_ma",
+f"qb_dropback_{in_game_window_size}_play_ma",
+f"qb_scramble_{in_game_window_size}_play_ma",
+f"rush_attempt_{in_game_window_size}_play_ma",
+f"pass_attempt_{in_game_window_size}_play_ma",
+f"sack_{in_game_window_size}_play_ma",
+f"complete_pass_{in_game_window_size}_play_ma",
+f"tackled_for_loss_{in_game_window_size}_play_ma",
+f"run_yards_given_{defense_window_size}_play_ma_ffill",
+f"defense_tfl_{defense_window_size}_play_ma_ffill",
+f"pass_yards_given_{defense_window_size}_play_ma_ffill",
+f"defense_sack_{defense_window_size}_play_ma_ffill",
+f"defense_qb_hit_{defense_window_size}_play_ma_ffill",
+f"defense_interception_{defense_window_size}_play_ma_ffill",
+f"pass_given_up_{defense_window_size}_play_ma_ffill",
 #  'compund_playtype', # TODO reintroduce with additional window tracking compound play types as flag vals since theres no hash marker col
  'game_month']
 
-# COMMAND ----------
-
-# Join run and pass defense to back to the in_game table and front fill defensive stats
-gold_df = gold_in_game_df.join(run_defense_ma_df, 
-                               on=["play_id", "game_date", "defteam"], 
-                               how="left")\
-                        .join(pass_defense_ma_df,
-                                on=["play_id", "game_date", "defteam"],
-                                how="left")
-
-for c in [f"run_yards_given_{defense_window_size}_play_ma",
-          f"defense_tfl_{defense_window_size}_play_ma",
-          f"pass_yards_given_{defense_window_size}_play_ma",
-          f"defense_sack_{defense_window_size}_play_ma",
-          f"defense_qb_hit_{defense_window_size}_play_ma",
-          f"defense_interception_{defense_window_size}_play_ma",
-          f"pass_given_up_{defense_window_size}_play_ma"]:
-    gold_df = gold_df.transform(front_fill, col=c, partition_cols=["defteam"], 
-                                 order_cols=["game_date", "play_id"])
-
-display(gold_df.filter(gold_df.game_id == "2010100300").orderBy("play_id"))
-
-
-# COMMAND ----------
-
-# Save gold table as Delta Lake table
-partition_cols = ["posteam"]
-gold_full_table_name = f"`{catalog}`.`{gold_database_name}`.`{gold_table_name}`"
-gold_df.write.mode("overwrite").format("delta")\
-    .partitionBy(*partition_cols)\
-    .option("overwriteSchema", "true").saveAsTable(gold_full_table_name)
-
-# COMMAND ----------
-
-narrow_df = gold_df.select(*narrow_table_columns)
+narrow_df = gold_df.orderBy("game_date", "play_id").select(*narrow_df_columns)
 display(narrow_df)
 
 # COMMAND ----------
