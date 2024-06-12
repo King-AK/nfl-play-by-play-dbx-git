@@ -31,16 +31,15 @@ display(silver_df)
 
 # COMMAND ----------
 
-display(silver_df.where("play_type IN ('pass', 'run', 'punt') AND posteam IN ('STL', 'NE', 'GB')"))
+# display(silver_df.where("play_type IN ('pass', 'run', 'punt') AND posteam IN ('STL', 'NE', 'GB')"))
 
 # COMMAND ----------
 
-# Filter down for target columns, play type, and team, add compound_playtype label
+# Helper functions
 from pyspark.sql import functions as F
 from pyspark.sql.types import *
 from pyspark.sql.window import Window
 import re
-
 
 def build_compound_playtype(play_type, pass_length, pass_location, run_location, run_gap):
     match play_type:
@@ -52,22 +51,24 @@ def build_compound_playtype(play_type, pass_length, pass_location, run_location,
         return play_type
 build_compound_playtype_udf = F.udf(build_compound_playtype, StringType())
 
-def augment_with_past_ma(df, col, window_size=5):
+def augment_with_past_ma(df, col, partition_cols=[], window_size=5, col_rename=''):
     # Use of 5 as the MA range is arbitrary here
     lower_bound = (-1) - window_size
     past_ma_window = (Window()
-                      .partitionBy(F.col("game_id"), F.col("posteam"))
+                      .partitionBy(*[F.col(c) for c in partition_cols])
                       .orderBy(F.col("play_id"))
                       .rowsBetween(lower_bound, -1))
-    return df.withColumn(f"{col}_{window_size}_play_ma", F.avg(col).over(past_ma_window))
+    name = col_rename if col_rename != '' else col
+    return df.withColumn(f"{name}_{window_size}_play_ma", F.avg(col).over(past_ma_window))
 
+# COMMAND ----------
+
+# Build posteam in-game DF
 intermediate_df = silver_df
 for col in ["yards_gained", "qb_dropback", "qb_scramble", "rush_attempt", "pass_attempt", "sack", "complete_pass"]:
-    intermediate_df = augment_with_past_ma(intermediate_df, col, window_size=10)
-
-
+    intermediate_df = augment_with_past_ma(intermediate_df, col, partition_cols=["game_id", "posteam"], window_size=10)
+    
 play_type_filter = ['pass', 'run', 'punt,' 'qb_kneel', 'qb_spike']
-
 gold_df = intermediate_df.filter(intermediate_df.play_type.isin(*play_type_filter))\
                 .filter(intermediate_df.sack == 0)\
                 .withColumn("compund_playtype", 
@@ -81,6 +82,23 @@ gold_df = intermediate_df.filter(intermediate_df.play_type.isin(*play_type_filte
                 .withColumn("game_month", F.month(intermediate_df.game_date).cast(StringType()))
 
 display(gold_df)
+
+# COMMAND ----------
+
+# Build defensive tracking stats - RUN
+run_defense_intermediate_df = silver_df.filter(silver_df.play_type == "run")
+for k,v in [("yards_gained", "run_yards_given"), ("tackled_for_loss", "tackled_for_loss")]:
+    run_defense_intermediate_df = augment_with_past_ma(run_defense_intermediate_df, k, partition_cols=["defteam"], window_size=32, col_rename=v)
+  
+display(run_defense_intermediate_df)
+
+# COMMAND ----------
+
+# Build defensive tracking stats - PASS
+pass_defense_intermediate_df = silver_df.filter(silver_df.play_type == "pass")
+for k,v in [("sack", "sack"), ("qb_hit", "qb_hit"), ("interception", "interception"), ("complete_pass", "pass_given_up")]:
+    pass_defense_intermediate_df = augment_with_past_ma(pass_defense_intermediate_df, k, partition_cols=["defteam"], window_size=32, col_rename=v)
+display(pass_defense_intermediate_df)
 
 # COMMAND ----------
 
