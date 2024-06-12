@@ -105,7 +105,6 @@ narrow_table_columns = [
  'time',
  'ydstogo',
  'play_type',
- 'yards_gained',
  'shotgun',
  'no_huddle',
  'home_timeouts_remaining',
@@ -195,8 +194,15 @@ display(narrow_df)
 
 # COMMAND ----------
 
+# Define normalization functions
+
+
+# COMMAND ----------
+
 # Save narrow version of gold table for ml experimentation that omits columns that wont be used in prediction
-narrow_gold_full_table_name = f"`{catalog}`.`{gold_database_name}`.`narrow_{gold_table_name}`"
-narrow_df.write.mode("overwrite").format("delta")\
-    .partitionBy(*partition_cols)\
-    .option("overwriteSchema", "true").saveAsTable(narrow_gold_full_table_name)
+teams = ["NE", "CHI", "PHI"]
+for team in teams:
+    narrow_gold_full_table_name = f"`{catalog}`.`{gold_database_name}`.`narrow_ml_{gold_table_name}_{team}`"
+    narrow_df.filter(narrow_df.posteam == team)\
+        .write.mode("overwrite").format("delta")\
+        .option("overwriteSchema", "true").saveAsTable(narrow_gold_full_table_name)
