@@ -63,42 +63,69 @@ def augment_with_past_ma(df, col, partition_cols=[], window_size=5, col_rename='
 
 # COMMAND ----------
 
+in_game_window_size = 8
+defense_window_size = 32
+
+# COMMAND ----------
+
 # Build posteam in-game DF
-intermediate_df = silver_df
-for col in ["yards_gained", "qb_dropback", "qb_scramble", "rush_attempt", "pass_attempt", "sack", "complete_pass"]:
-    intermediate_df = augment_with_past_ma(intermediate_df, col, partition_cols=["game_id", "posteam"], window_size=10)
+in_game_intermediate_df = silver_df
+for col in ["yards_gained", "qb_dropback", "qb_scramble", "rush_attempt", "pass_attempt", "sack", "complete_pass", "tackled_for_loss"]:
+    in_game_intermediate_df = augment_with_past_ma(in_game_intermediate_df, col, partition_cols=["game_id", "posteam"], window_size=in_game_window_size)
     
 play_type_filter = ['pass', 'run', 'punt,' 'qb_kneel', 'qb_spike']
-gold_df = intermediate_df.filter(intermediate_df.play_type.isin(*play_type_filter))\
-                .filter(intermediate_df.sack == 0)\
+gold_in_game_df = in_game_intermediate_df.filter(in_game_intermediate_df.play_type.isin(*play_type_filter))\
+                .filter(in_game_intermediate_df.sack == 0)\
                 .withColumn("compund_playtype", 
-                            build_compound_playtype_udf(intermediate_df["play_type"],
-                                                        intermediate_df["pass_length"],
-                                                        intermediate_df["pass_location"],
-                                                        intermediate_df["run_location"],
-                                                        intermediate_df["run_gap"]
+                            build_compound_playtype_udf(in_game_intermediate_df["play_type"],
+                                                        in_game_intermediate_df["pass_length"],
+                                                        in_game_intermediate_df["pass_location"],
+                                                        in_game_intermediate_df["run_location"],
+                                                        in_game_intermediate_df["run_gap"]
                                                         )
                             )\
-                .withColumn("game_month", F.month(intermediate_df.game_date).cast(StringType()))
+                .withColumn("game_month", F.month(in_game_intermediate_df.game_date).cast(StringType()))
 
-display(gold_df)
+display(gold_in_game_df)
 
 # COMMAND ----------
 
 # Build defensive tracking stats - RUN
 run_defense_intermediate_df = silver_df.filter(silver_df.play_type == "run")
-for k,v in [("yards_gained", "run_yards_given"), ("tackled_for_loss", "tackled_for_loss")]:
-    run_defense_intermediate_df = augment_with_past_ma(run_defense_intermediate_df, k, partition_cols=["defteam"], window_size=32, col_rename=v)
+for k,v in [("yards_gained", "run_yards_given"), ("tackled_for_loss", "defense_tfl")]:
+    run_defense_intermediate_df = augment_with_past_ma(run_defense_intermediate_df, k, partition_cols=["defteam"], window_size=defense_window_size, col_rename=v)
   
+run_defense_ma_df = run_defense_intermediate_df.select(
+    "play_id",
+    "game_id",
+    "defteam",
+    "game_date",
+    f"defense_tfl_{defense_window_size}_play_ma",
+    f"run_yards_given_{defense_window_size}_play_ma"
+)
+
 display(run_defense_intermediate_df)
 
 # COMMAND ----------
 
 # Build defensive tracking stats - PASS
 pass_defense_intermediate_df = silver_df.filter(silver_df.play_type == "pass")
-for k,v in [("sack", "sack"), ("qb_hit", "qb_hit"), ("interception", "interception"), ("complete_pass", "pass_given_up")]:
-    pass_defense_intermediate_df = augment_with_past_ma(pass_defense_intermediate_df, k, partition_cols=["defteam"], window_size=32, col_rename=v)
-display(pass_defense_intermediate_df)
+for k,v in [("yards_gained", "pass_yards_given"), ("sack", "defense_sack"), ("qb_hit", "defense_qb_hit"), ("interception", "defense_interception"), ("complete_pass", "pass_given_up")]:
+    pass_defense_intermediate_df = augment_with_past_ma(pass_defense_intermediate_df, k, partition_cols=["defteam"], window_size=defense_window_size, col_rename=v)
+
+pass_defense_ma_df = pass_defense_intermediate_df.select(
+    "play_id",
+    "game_id",
+    "defteam",
+    "game_date",
+    f"pass_yards_given_{defense_window_size}_play_ma",
+    f"defense_sack_{defense_window_size}_play_ma",
+    f"defense_qb_hit_{defense_window_size}_play_ma",
+    f"defense_interception_{defense_window_size}_play_ma",
+    f"pass_given_up_{defense_window_size}_play_ma"
+)
+
+display(pass_defense_ma_df)
 
 # COMMAND ----------
 
@@ -195,6 +222,11 @@ narrow_table_columns = [
  'complete_pass_10_play_ma',
 #  'compund_playtype', # TODO reintroduce with additional window tracking compound play types as flag vals since theres no hash marker col
  'game_month']
+
+# COMMAND ----------
+
+# Join run and pass defense to back to the in_game table and front fill defensive stats
+
 
 # COMMAND ----------
 
