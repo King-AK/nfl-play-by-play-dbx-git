@@ -51,15 +51,24 @@ def build_compound_playtype(play_type, pass_length, pass_location, run_location,
         return play_type
 build_compound_playtype_udf = F.udf(build_compound_playtype, StringType())
 
-def augment_with_past_ma(df, col, partition_cols=[], window_size=5, col_rename=''):
+def augment_with_past_ma(df, col, partition_cols=[], window_size=5, col_rename='', order_cols = ["game_date", "play_id"]):
     # Use of 5 as the MA range is arbitrary here
     lower_bound = (-1) - window_size
     past_ma_window = (Window()
                       .partitionBy(*[F.col(c) for c in partition_cols])
-                      .orderBy(F.col("play_id"))
+                      .orderBy(*[F.col(c) for c in order_cols])
                       .rowsBetween(lower_bound, -1))
     name = col_rename if col_rename != '' else col
     return df.withColumn(f"{name}_{window_size}_play_ma", F.avg(col).over(past_ma_window))
+  
+
+def front_fill(df, col, partition_cols=[], order_cols = ["game_date", "play_id"]):
+   front_fill_window = (Window()
+                        .partitionBy(*[F.col(c) for c in partition_cols])
+                        .orderBy(*[F.col(c) for c in order_cols])
+                        .rowsBetween(Window.unboundedPreceding, 0))
+   return df.withColumn(f"{col}_ffill", F.coalesce(F.col(col), F.last(F.col(col), ignorenulls=True).over(front_fill_window)))
+  
 
 # COMMAND ----------
 
@@ -71,7 +80,8 @@ defense_window_size = 32
 # Build posteam in-game DF
 in_game_intermediate_df = silver_df
 for col in ["yards_gained", "qb_dropback", "qb_scramble", "rush_attempt", "pass_attempt", "sack", "complete_pass", "tackled_for_loss"]:
-    in_game_intermediate_df = augment_with_past_ma(in_game_intermediate_df, col, partition_cols=["game_id", "posteam"], window_size=in_game_window_size)
+    in_game_intermediate_df = augment_with_past_ma(in_game_intermediate_df, col, partition_cols=["game_id", "posteam"], window_size=in_game_window_size,
+                                                   order_cols=["game_date", "play_id"])
     
 play_type_filter = ['pass', 'run', 'punt,' 'qb_kneel', 'qb_spike']
 gold_in_game_df = in_game_intermediate_df.filter(in_game_intermediate_df.play_type.isin(*play_type_filter))\
@@ -86,38 +96,40 @@ gold_in_game_df = in_game_intermediate_df.filter(in_game_intermediate_df.play_ty
                             )\
                 .withColumn("game_month", F.month(in_game_intermediate_df.game_date).cast(StringType()))
 
-display(gold_in_game_df)
+display(gold_in_game_df.filter(gold_in_game_df.posteam=="GB"))
 
 # COMMAND ----------
 
 # Build defensive tracking stats - RUN
 run_defense_intermediate_df = silver_df.filter(silver_df.play_type == "run")
 for k,v in [("yards_gained", "run_yards_given"), ("tackled_for_loss", "defense_tfl")]:
-    run_defense_intermediate_df = augment_with_past_ma(run_defense_intermediate_df, k, partition_cols=["defteam"], window_size=defense_window_size, col_rename=v)
+    run_defense_intermediate_df = augment_with_past_ma(run_defense_intermediate_df, k, partition_cols=["defteam"], window_size=defense_window_size, col_rename=v,
+                                                       order_cols=["game_date", "play_id"])
   
 run_defense_ma_df = run_defense_intermediate_df.select(
     "play_id",
-    "game_id",
-    "defteam",
     "game_date",
+    "defteam",
     f"defense_tfl_{defense_window_size}_play_ma",
     f"run_yards_given_{defense_window_size}_play_ma"
 )
 
-display(run_defense_intermediate_df)
+run_defense_ma_df.cache()
+
+display(run_defense_ma_df.filter(run_defense_ma_df.defteam=="CAR"))
 
 # COMMAND ----------
 
 # Build defensive tracking stats - PASS
 pass_defense_intermediate_df = silver_df.filter(silver_df.play_type == "pass")
 for k,v in [("yards_gained", "pass_yards_given"), ("sack", "defense_sack"), ("qb_hit", "defense_qb_hit"), ("interception", "defense_interception"), ("complete_pass", "pass_given_up")]:
-    pass_defense_intermediate_df = augment_with_past_ma(pass_defense_intermediate_df, k, partition_cols=["defteam"], window_size=defense_window_size, col_rename=v)
+    pass_defense_intermediate_df = augment_with_past_ma(pass_defense_intermediate_df, k, partition_cols=["defteam"], window_size=defense_window_size, col_rename=v,
+                                                        order_cols=["game_date", "play_id"])
 
 pass_defense_ma_df = pass_defense_intermediate_df.select(
     "play_id",
-    "game_id",
-    "defteam",
     "game_date",
+    "defteam",
     f"pass_yards_given_{defense_window_size}_play_ma",
     f"defense_sack_{defense_window_size}_play_ma",
     f"defense_qb_hit_{defense_window_size}_play_ma",
@@ -125,7 +137,9 @@ pass_defense_ma_df = pass_defense_intermediate_df.select(
     f"pass_given_up_{defense_window_size}_play_ma"
 )
 
-display(pass_defense_ma_df)
+pass_defense_ma_df.cache()
+
+display(pass_defense_ma_df.filter(pass_defense_ma_df.defteam=="CAR"))
 
 # COMMAND ----------
 
@@ -227,14 +241,17 @@ narrow_table_columns = [
 
 # Join run and pass defense to back to the in_game table and front fill defensive stats
 gold_df = gold_in_game_df.join(run_defense_ma_df, 
-                               on=["play_id", "game_id", "defteam"], 
+                               on=["play_id", "game_date", "defteam"], 
                                how="left")\
                         .join(pass_defense_ma_df,
-                                on=["play_id", "game_id", "defteam"],
+                                on=["play_id", "game_date", "defteam"],
                                 how="left")
-                        
 
-display(gold_df)
+for c in [f"run_yards_given_{defense_window_size}_play_ma"]:
+    gold_df = gold_df.transform(front_fill, col=c, partition_cols=["defteam"], 
+                                 order_cols=["game_date", "play_id"])
+
+display(gold_df.filter(gold_df.game_id == "2010100300").orderBy("play_id"))
 
 # COMMAND ----------
 
