@@ -247,11 +247,18 @@ gold_df = gold_in_game_df.join(run_defense_ma_df,
                                 on=["play_id", "game_date", "defteam"],
                                 how="left")
 
-for c in [f"run_yards_given_{defense_window_size}_play_ma"]:
+for c in [f"run_yards_given_{defense_window_size}_play_ma",
+          f"defense_tfl_{defense_window_size}_play_ma",
+          f"pass_yards_given_{defense_window_size}_play_ma",
+          f"defense_sack_{defense_window_size}_play_ma",
+          f"defense_qb_hit_{defense_window_size}_play_ma",
+          f"defense_interception_{defense_window_size}_play_ma",
+          f"pass_given_up_{defense_window_size}_play_ma"]:
     gold_df = gold_df.transform(front_fill, col=c, partition_cols=["defteam"], 
                                  order_cols=["game_date", "play_id"])
 
 display(gold_df.filter(gold_df.game_id == "2010100300").orderBy("play_id"))
+
 
 # COMMAND ----------
 
