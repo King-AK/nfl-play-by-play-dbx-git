@@ -226,7 +226,15 @@ narrow_table_columns = [
 # COMMAND ----------
 
 # Join run and pass defense to back to the in_game table and front fill defensive stats
+gold_df = gold_in_game_df.join(run_defense_ma_df, 
+                               on=["play_id", "game_id", "defteam"], 
+                               how="left")\
+                        .join(pass_defense_ma_df,
+                                on=["play_id", "game_id", "defteam"],
+                                how="left")
+                        
 
+display(gold_df)
 
 # COMMAND ----------
 
