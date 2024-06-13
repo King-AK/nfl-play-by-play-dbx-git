@@ -59,4 +59,7 @@ help(summary)
 
 # COMMAND ----------
 
+import mlflow
 model_uri = summary.best_trial.model_path
+predict_udf = mlflow.pyfunc.spark_udf(spark, model_uri=model_uri, result_type="string")
+display(test_df.withColumn("play_type_predicted", predict_udf()).select("play_type", "play_type_predicted", "*").orderBy("game_date","play_id"))
