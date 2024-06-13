@@ -26,7 +26,11 @@ silver_table_name = "nfl_play_by_play_data"
 
 # Get DF for silver data
 silver_full_table_name = f"`{catalog}`.`{silver_database_name}`.`{silver_table_name}`"
-silver_df = spark.table(silver_full_table_name)
+silver_df = spark.table(silver_full_table_name).drop_duplicates()
+silver_df.count()
+
+# COMMAND ----------
+
 display(silver_df)
 
 # COMMAND ----------
@@ -176,6 +180,8 @@ gold_df.write.mode("overwrite").format("delta")\
 # COMMAND ----------
 
 narrow_df_columns = [
+ 'play_id',
+ 'game_date',
  'home_team',
  'away_team',
  'posteam',
@@ -281,15 +287,29 @@ display(narrow_df)
 
 # COMMAND ----------
 
-# Define normalization functions
-
-
-# COMMAND ----------
-
 # Save narrow version of gold table for ml experimentation that omits columns that wont be used in prediction
+# Register as feature tables in the gold schema
+from databricks.feature_engineering import FeatureEngineeringClient
+
+fe_client = FeatureEngineeringClient()
 teams = ["NE", "CHI", "PHI"]
 for team in teams:
-    narrow_gold_full_table_name = f"`{catalog}`.`{gold_database_name}`.`narrow_ml_{gold_table_name}_{team}`"
-    narrow_df.filter(narrow_df.posteam == team)\
-        .write.mode("overwrite").format("delta")\
-        .option("overwriteSchema", "true").saveAsTable(narrow_gold_full_table_name)
+    narrow_gold_full_fs_table_name = f"{catalog}.{gold_database_name}.narrow_ml_{gold_table_name}_{team}"
+
+    payload_df = narrow_df.filter(narrow_df.posteam == team)
+    
+    try: 
+        fe_client.get_table(name=narrow_gold_full_fs_table_name)
+    except ValueError:
+        fe_client.create_table(
+            name=narrow_gold_full_fs_table_name,
+            primary_keys=["play_id", "game_date", "posteam"],
+            schema = payload_df.schema,
+            description=f"Narrow ML Dataframe for {team} offensive plays"
+        )
+
+    fe_client.write_table(
+        name=narrow_gold_full_fs_table_name,
+        df=payload_df
+    )
+  
