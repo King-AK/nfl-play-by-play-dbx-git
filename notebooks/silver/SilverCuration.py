@@ -150,10 +150,8 @@ display(silver_df)
 # COMMAND ----------
 
 # # Save DF as Delta Lake table
-partitionCols = ["posteam"]
 silver_full_table_name = f"`{catalog}`.`{silver_database_name}`.`{silver_table_name}`"
 silver_df.write.mode("overwrite")\
     .format("delta")\
     .option("overwriteSchema", "true")\
-    .partitionBy(*partitionCols)\
     .saveAsTable(silver_full_table_name)
